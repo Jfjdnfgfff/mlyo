@@ -34,6 +34,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('EDUCATOR');
   const [phone, setPhone] = useState('');
+  const [tempPassword, setTempPassword] = useState('Creche@2026');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -58,8 +59,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
     }
   };
 
-  const handleExportBackup = () => {
-    window.open('/api/backup/export', '_blank');
+  const handleExportBackup = async () => {
+    try {
+      setMsg('جارٍ تجهيز النسخة الاحتياطية من Firebase…');
+      const backup = await api.exportBackup();
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `creche_backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg('تم تنزيل النسخة الاحتياطية بنجاح');
+      setTimeout(() => setMsg(''), 3000);
+    } catch (err: any) {
+      setMsg(err?.message || 'فشل تصدير النسخة الاحتياطية');
+    }
   };
 
   const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,10 +113,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
 
     try {
       setSubmitting(true);
-      await api.createUser({ name: name.trim(), email: email.trim(), role, phone: phone.trim() });
+      const res = await api.createUser({
+        name: name.trim(),
+        email: email.trim(),
+        role,
+        phone: phone.trim(),
+        password: tempPassword
+      });
       setIsUserModalOpen(false);
-      setMsg('تم إنشاء حساب المستخدم بنجاح');
-      setTimeout(() => setMsg(''), 3000);
+      setMsg(`تم إنشاء حساب المستخدم بنجاح — كلمة المرور المؤقتة: ${tempPassword}`);
+      setTimeout(() => setMsg(''), 8000);
       loadData();
     } catch (err: any) {
       setFormError(err.message || 'فشل إضافة المستخدم');
@@ -383,6 +404,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-600 focus:outline-hidden font-mono"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">كلمة المرور المؤقتة *</label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  dir="ltr"
+                  value={tempPassword}
+                  onChange={(e) => setTempPassword(e.target.value)}
+                  placeholder="Creche@2026"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-600 focus:outline-hidden font-mono text-left"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">سيُطلب من المستخدم تغييرها بعد أول دخول (6 أحرف فأكثر)</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
