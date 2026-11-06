@@ -1,0 +1,6 @@
+{
+  "name": "Crèche Manager DZ",
+  "description": "منصة احترافية لتسيير الحضانات ورياض الأطفال في الجزائر (إدارة الأداء والاشتراكات والحضور والمالية).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
