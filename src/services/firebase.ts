@@ -10,7 +10,6 @@
  */
 import { initializeApp, getApp, getApps } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
-import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics';
 
 // إعدادات Firebase Web (mlyo-789e7) — عامة بطبيعتها وليست سراً
 const firebaseConfig = {
@@ -28,10 +27,5 @@ const firebaseConfig = {
 export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const database = getDatabase(firebaseApp);
 
-// Analytics — لا تعمل إلا في المتصفح ومع دعم كامل
-export const analyticsReady: Promise<Analytics | null> =
-  typeof window !== 'undefined'
-    ? isSupported()
-        .then((ok) => (ok ? getAnalytics(firebaseApp) : null))
-        .catch(() => null)
-    : Promise.resolve(null);
+// Analytics تعمل عبر مقتطف CDN في index.html (كما في مقتطف Firebase Console) —
+// لا نهيئها هنا حتى لا تُحتسب مشاهدات الصفحة مرتين.
