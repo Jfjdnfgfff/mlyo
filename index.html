@@ -25,6 +25,26 @@
         } catch (e) {}
       })();
     </script>
+    <!-- Firebase CDN (mlyo-789e7) — ربط Analytics كما في مقتطف Console -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js";
+      import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.2.0/firebase-analytics.js";
+
+      // Your web app's Firebase configuration
+      const firebaseConfig = {
+        apiKey: "AIzaSyB43Vf3yfvGC81sqqQNabYeiMNLeyq-3co",
+        authDomain: "mlyo-789e7.firebaseapp.com",
+        projectId: "mlyo-789e7",
+        storageBucket: "mlyo-789e7.firebasestorage.app",
+        messagingSenderId: "575599721753",
+        appId: "1:575599721753:web:d2faa0516dccae463c9988",
+        measurementId: "G-DVBFRT259L"
+      };
+
+      // Initialize Firebase (نسخة CDN — مخصصة لـ Analytics؛ RTDB يعمل عبر npm SDK)
+      const app = initializeApp(firebaseConfig);
+      const analytics = getAnalytics(app);
+    </script>
   </head>
   <body class="bg-[#F8FAFC] text-[#0F172A] font-sans antialiased selection:bg-blue-100 selection:text-blue-900">
     <div id="root"></div>

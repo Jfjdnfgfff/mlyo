@@ -3,10 +3,9 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
 import { ref as dbRef, onValue } from 'firebase/database';
-import { api, setCurrentProfile, subscribeToNurseryChanges } from './services/api';
-import { auth, database } from './services/firebase';
+import { api, setCurrentProfile, subscribeToNurseryChanges, LOCAL_DEMO_PROFILES } from './services/api';
+import { database } from './services/firebase';
 import {
   User,
   UserRole,
@@ -24,7 +23,6 @@ import {
 
 import { Sidebar, ActiveTab } from './components/Sidebar';
 import { Header } from './components/Header';
-import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
 import { ChildrenView } from './components/ChildrenView';
 import { ParentsView } from './components/ParentsView';
@@ -41,13 +39,17 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // جلسة Firebase Auth: loading → ready | signedOut
-  const [authState, setAuthState] = useState<'loading' | 'ready' | 'signedOut'>('loading');
-  const [authError, setAuthError] = useState('');
   const [isLive, setIsLive] = useState(false);
 
-  // المستخدم الحالي (من /users/{uid} في Realtime Database)
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  // الملف المحلي (بدون مصادقة) — الدور يُحفظ في localStorage لاختبار الصلاحيات
+  const [currentUser, setCurrentUser] = useState<User>(() => {
+    try {
+      const saved = localStorage.getItem('creche_local_role') as UserRole | null;
+      return (saved && LOCAL_DEMO_PROFILES[saved]) || LOCAL_DEMO_PROFILES.ADMIN;
+    } catch {
+      return LOCAL_DEMO_PROFILES.ADMIN;
+    }
+  });
 
   const [todayDate, setTodayDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7));
@@ -128,52 +130,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, selectedMonth, todayDate]);
 
-  // تحميل البيانات عند تبديل الشهر/التاريخ (بعد جاهزية الجلسة فقط)
+  // مزامنة الملف الشخصي مع طبقة الـ API ثم تحميل البيانات
   useEffect(() => {
-    if (authState === 'ready') refreshAllData();
+    setCurrentProfile(currentUser);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedMonth, todayDate, authState]);
+  }, [currentUser]);
 
-  // 1) ربط جلسة Firebase Auth بملف المستخدم في RTDB
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setAuthError('');
-      if (!fbUser) {
-        setCurrentProfile(null);
-        setCurrentUser(null);
-        setAuthState('signedOut');
-        return;
-      }
-      try {
-        const profile = await api.getUserProfile(fbUser.uid);
-        if (!profile) {
-          // حساب Auth موجود لكن بدون ملف في RTDB — نرفض الدخول
-          setCurrentProfile(null);
-          setCurrentUser(null);
-          setAuthError('هذا الحساب غير مهيأ في قاعدة البيانات (users/' + fbUser.uid + ')');
-          await auth.signOut();
-          setAuthState('signedOut');
-          return;
-        }
-        setCurrentProfile(profile);
-        setCurrentUser(profile);
-        setAuthState('ready');
-      } catch (err: any) {
-        console.error('تعذر تحميل ملف المستخدم:', err);
-        setCurrentProfile(null);
-        setCurrentUser(null);
-        setAuthError(err?.message || 'تعذر تحميل بيانات الحساب');
-        setAuthState('signedOut');
-      }
-    });
-    return () => unsubscribe();
+    refreshAllData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedMonth, todayDate, currentUser]);
 
-  // 2) مزامنة فورية: أي تغيير في RTDB يُعيد تحميل الواجهة تلقائياً
+  // 1) مزامنة فورية: أي تغيير في RTDB يُعيد تحميل الواجهة تلقائياً
   useEffect(() => {
-    if (authState !== 'ready' || !currentUser) return;
-
     const nid = currentUser.nurseryId;
     const unsubscribe = subscribeToNurseryChanges(
       nid,
@@ -186,7 +155,7 @@ export default function App() {
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authState, currentUser?.nurseryId]);
+  }, [currentUser.nurseryId]);
 
   // 3) مؤشر الاتصال المباشر (.info/connected)
   useEffect(() => {
@@ -198,26 +167,17 @@ export default function App() {
     return () => unref();
   }, []);
 
-  // تسجيل الخروج
-  const handleSignOut = async () => {
-    try {
-      await api.logout();
-    } catch (err) {
-      console.warn('signOut:', err);
-    } finally {
-      setCurrentUser(null);
-      setAuthState('signedOut');
-    }
-  };
-
-  // Handle Role Switching for Testing RBAC (حسابات العرض عبر Firebase Auth)
-  const handleSwitchUserRole = async (role: UserRole) => {
-    try {
-      await api.loginDemoRole(role);
-      // onAuthStateChanged يتكفل بتحديث currentUser وإعادة التحميل
-    } catch (err: any) {
-      console.warn('تعذر تبديل الحساب:', err);
-      alert(err?.message || 'تعذر تبديل الحساب — تأكد من تهيئة حسابات العرض (زر التهيئة في شاشة الدخول)');
+  // تبديل الدور محلياً لاختبار الصلاحيات (بدون كلمة مرور)
+  const handleSwitchUserRole = (role: UserRole) => {
+    const profile = LOCAL_DEMO_PROFILES[role];
+    if (profile) {
+      try {
+        localStorage.setItem('creche_local_role', role);
+      } catch {
+        /* تجاهل */
+      }
+      setCurrentProfile(profile);
+      setCurrentUser(profile);
     }
   };
 
@@ -329,22 +289,6 @@ export default function App() {
     }
   };
 
-  // ---- بوابة المصادقة: تحميل / تسجيل خروج / جاهزة ----
-  if (authState === 'loading') {
-    return (
-      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center gap-4 dir-rtl">
-        <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg animate-pulse">
-          <span className="text-white text-2xl font-extrabold">ح</span>
-        </div>
-        <p className="text-sm font-bold text-slate-500">جارٍ الاتصال بقاعدة بيانات Firebase…</p>
-      </div>
-    );
-  }
-
-  if (authState === 'signedOut' || !currentUser) {
-    return <LoginView notice={authError || undefined} onSignedIn={() => { /* onAuthStateChanged يتكفل بالباقي */ }} />;
-  }
-
   const tabTitles: Record<ActiveTab, string> = {
     dashboard: 'لوحة التحكم والإحصائيات الرئيسية',
     children: 'إدارة أطفال الحضانة والملفات',
@@ -377,7 +321,6 @@ export default function App() {
           onSwitchUser={handleSwitchUserRole}
           onToggleMobileMenu={() => setMobileOpen(!mobileOpen)}
           onRefreshData={refreshAllData}
-          onSignOut={handleSignOut}
           isLive={isLive}
         />
 
