@@ -34,7 +34,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<UserRole>('EDUCATOR');
   const [phone, setPhone] = useState('');
-  const [tempPassword, setTempPassword] = useState('Creche@2026');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -113,16 +112,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
 
     try {
       setSubmitting(true);
-      const res = await api.createUser({
+      await api.createUser({
         name: name.trim(),
         email: email.trim(),
         role,
-        phone: phone.trim(),
-        password: tempPassword
+        phone: phone.trim()
       });
       setIsUserModalOpen(false);
-      setMsg(`تم إنشاء حساب المستخدم بنجاح — كلمة المرور المؤقتة: ${tempPassword}`);
-      setTimeout(() => setMsg(''), 8000);
+      setMsg('تم إنشاء ملف المستخدم بنجاح');
+      setTimeout(() => setMsg(''), 3000);
       loadData();
     } catch (err: any) {
       setFormError(err.message || 'فشل إضافة المستخدم');
@@ -404,21 +402,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser, onRefre
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-600 focus:outline-hidden font-mono"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">كلمة المرور المؤقتة *</label>
-                <input
-                  type="text"
-                  required
-                  minLength={6}
-                  dir="ltr"
-                  value={tempPassword}
-                  onChange={(e) => setTempPassword(e.target.value)}
-                  placeholder="Creche@2026"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-600 focus:outline-hidden font-mono text-left"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">سيُطلب من المستخدم تغييرها بعد أول دخول (6 أحرف فأكثر)</p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">

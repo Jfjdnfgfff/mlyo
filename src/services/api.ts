@@ -29,12 +29,7 @@ import {
   remove,
   onValue
 } from 'firebase/database';
-import {
-  signInWithEmailAndPassword,
-  signOut,
-  createUserWithEmailAndPassword
-} from 'firebase/auth';
-import { database, auth, secondaryAuth, DEMO_ACCOUNTS, DEMO_PASSWORD } from './firebase';
+import { database } from './firebase';
 import {
   User,
   Child,
@@ -54,22 +49,53 @@ import {
 const DEFAULT_NURSERY_ID = 'nursery_algiers_01';
 
 // ---------------------------------------------------------------------------
-// سياق المستخدم الحالي (يُضبط من App.tsx بعد resolve جلسة Firebase Auth)
+// الملف الشخصي المحلي — لا توجد مصادقة: الملف الافتراضي هو مدير الحضانة،
+// ويمكن تبديل الدور محلياً من الواجهة لاختبار الصلاحيات (بدون كلمات مرور).
 // ---------------------------------------------------------------------------
-let currentProfile: User | null = null;
+export const LOCAL_ADMIN_PROFILE: User = {
+  id: 'local_admin',
+  name: 'أحمد بن علي (المدير)',
+  email: 'admin@creche.dz',
+  role: 'ADMIN',
+  nurseryId: DEFAULT_NURSERY_ID,
+  phone: '0550123456',
+  createdAt: '2024-09-01T00:00:00.000Z'
+};
+
+export const LOCAL_DEMO_PROFILES: Record<UserRole, User> = {
+  ADMIN: LOCAL_ADMIN_PROFILE,
+  EDUCATOR: {
+    id: 'local_educator',
+    name: 'مريم حداد (مربية)',
+    email: 'educator@creche.dz',
+    role: 'EDUCATOR',
+    nurseryId: DEFAULT_NURSERY_ID,
+    assignedGroupId: undefined,
+    phone: '0661234567',
+    createdAt: '2024-09-01T00:00:00.000Z'
+  },
+  ACCOUNTANT: {
+    id: 'local_accountant',
+    name: 'كريم براهيمي (محاسب)',
+    email: 'accountant@creche.dz',
+    role: 'ACCOUNTANT',
+    nurseryId: DEFAULT_NURSERY_ID,
+    phone: '0770345678',
+    createdAt: '2024-09-01T00:00:00.000Z'
+  }
+};
+
+let currentProfile: User = LOCAL_ADMIN_PROFILE;
 
 export function setCurrentProfile(profile: User | null) {
-  currentProfile = profile;
+  currentProfile = profile || LOCAL_ADMIN_PROFILE;
 }
 
-export function getCurrentProfile(): User | null {
+export function getCurrentProfile(): User {
   return currentProfile;
 }
 
 function requireProfile(): User {
-  if (!currentProfile) {
-    throw new Error('جلسة غير صالحة — الرجاء تسجيل الدخول من جديد');
-  }
   return currentProfile;
 }
 
@@ -127,50 +153,12 @@ async function logAction(userId: string, userName: string, action: string, detai
 // واجهة api — نفس التواقيع السابقة قدر الإمكان
 // ---------------------------------------------------------------------------
 export const api = {
-  // ------------------------------------------------------------------ AUTH
-  /** تسجيل الدخول بكلمة مرور Firebase Auth */
-  login: async (email: string, password: string) => {
-    if (!email || !password) {
-      throw new Error('الرجاء إدخال البريد الإلكتروني وكلمة المرور');
-    }
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const profile = await api.getUserProfile(cred.user.uid);
-      if (!profile) {
-        await signOut(auth);
-        throw new Error('هذا الحساب غير مهيأ في قاعدة البيانات — راجع مدير النظام');
-      }
-      setCurrentProfile(profile);
-      void logAction(profile.id, profile.name, 'تسجيل دخول', 'تسجيل الدخول إلى منصة تسيير الحضانة');
-      return { success: true, token: cred.user.uid, user: profile };
-    } catch (err: any) {
-      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/wrong-password' || err?.code === 'auth/user-not-found') {
-        throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
-      }
-      if (err?.code === 'auth/too-many-requests') {
-        throw new Error('محاولات كثيرة فاشلة — حاول لاحقاً');
-      }
-      throw err;
-    }
-  },
-
-  /** جلب ملف المستخدم من RTDB حسب uid */
-  getUserProfile: async (uid: string): Promise<User | null> => {
-    return getPath<User>(`users/${uid}`);
-  },
-
-  logout: async () => {
-    setCurrentProfile(null);
-    await signOut(auth);
-    return { success: true };
-  },
-
+  // ---------------------------------------------------- USERS (بدون مصادقة)
   getMe: async () => {
-    const me = requireProfile();
-    return { success: true, user: me };
+    return { success: true, user: requireProfile() };
   },
 
-  /** قائمة مستخدمي الحضانة (ADMIN فقط) */
+  /** قائمة ملفات مستخدمي الحضانة (ADMIN فقط) — سجلات عادية في RTDB بدون كلمات مرور */
   getUsers: async () => {
     requireRole(['ADMIN']);
     const all = await getNode<User>('users');
@@ -178,20 +166,13 @@ export const api = {
     return { success: true, users };
   },
 
-  /**
-   * إنشاء حساب مستخدم جديد بدون إخراج المدير الحالي من جلسته
-   * (نستعمل تطبيقاً ثانوياً Firebase). ADMIN فقط.
-   */
-  createUser: async (userData: Partial<User> & { password?: string }) => {
+  /** إنشاء ملف مستخدم محلي جديد (ADMIN فقط) — مجرد سجل في RTDB، بلا كلمة مرور */
+  createUser: async (userData: Partial<User> & { assignedGroupId?: string }) => {
     const me = requireRole(['ADMIN']);
     const { name, email, role, phone, assignedGroupId } = userData;
-    const password = (userData.password || DEMO_PASSWORD).trim();
 
     if (!name || !email || !role) {
       throw new Error('الرجاء ملء كافة البيانات الأساسية (الاسم، البريد، الصلاحية)');
-    }
-    if (password.length < 6) {
-      throw new Error('كلمة المرور المؤقتة يجب أن تكون 6 أحرف على الأقل');
     }
 
     const emailNorm = email.trim().toLowerCase();
@@ -201,21 +182,9 @@ export const api = {
       throw new Error('البريد الإلكتروني مستخدم بالفعل');
     }
 
-    let uid = '';
-    try {
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, emailNorm, password);
-      uid = cred.user.uid;
-    } catch (err: any) {
-      if (err?.code === 'auth/email-already-in-use') {
-        throw new Error('هذا البريد مسجل مسبقاً في Firebase Authentication');
-      }
-      throw err;
-    } finally {
-      await signOut(secondaryAuth).catch(() => undefined);
-    }
-
+    const id = newId('user');
     const newUser: User = {
-      id: uid,
+      id,
       name: name.trim(),
       email: emailNorm,
       role: role as UserRole,
@@ -224,66 +193,20 @@ export const api = {
       phone: phone || '',
       createdAt: new Date().toISOString()
     };
-    // الكتابة بجلسة التطبيق الأساسي — مصرح بها لأن المدير ADMIN
-    await set(ref(database, `users/${uid}`), newUser);
+    await set(ref(database, `users/${id}`), newUser);
     await logAction(me.id, me.name, 'إنشاء حساب مستخدم', `إضافة المستخدم: ${newUser.name} (${newUser.role})`);
-    return { success: true, user: newUser, temporaryPassword: password };
+    return { success: true, user: newUser };
   },
 
-  /** حذف ملف المستخدم من RTDB (ADMIN فقط) — حساب Firebase Auth يُحذف من الكونسول */
+  /** حذف ملف مستخدم من RTDB (ADMIN فقط) */
   deleteUser: async (id: string) => {
     const me = requireRole(['ADMIN']);
     if (id === me.id) {
-      throw new Error('لا يمكنك حذف حسابك الشخصي أثناء الجلسة');
+      throw new Error('لا يمكنك حذف حسابك أثناء التصفح');
     }
     await remove(ref(database, `users/${id}`));
     await logAction(me.id, me.name, 'حذف حساب مستخدم', `حذف ملف المستخدم ID: ${id}`);
-    return {
-      success: true,
-      message: 'تم حذف ملف المستخدم من قاعدة البيانات — احذف حساب Firebase Auth من الكونسول لإتمام الإزالة'
-    };
-  },
-
-  /** زرع حسابات العرض التجريبية الثلاثة (admin/educator/accountant) أول مرة */
-  ensureDemoAccounts: async (password: string = DEMO_PASSWORD) => {
-    const created: string[] = [];
-    const skipped: string[] = [];
-    for (const acc of DEMO_ACCOUNTS) {
-      try {
-        const cred = await createUserWithEmailAndPassword(secondaryAuth, acc.email, password);
-        const uid = cred.user.uid;
-        const profile: User = {
-          id: uid,
-          name: acc.name,
-          email: acc.email,
-          role: acc.role,
-          nurseryId: DEFAULT_NURSERY_ID,
-          assignedGroupId: acc.assignedGroupId,
-          phone: acc.phone,
-          createdAt: new Date().toISOString()
-        };
-        await set(ref(database, `users/${uid}`), profile);
-        created.push(acc.email);
-      } catch (err: any) {
-        if (err?.code === 'auth/email-already-in-use') {
-          skipped.push(acc.email);
-        } else {
-          await signOut(secondaryAuth).catch(() => undefined);
-          throw err;
-        }
-      } finally {
-        await signOut(secondaryAuth).catch(() => undefined);
-      }
-    }
-    return { success: true, created, skipped };
-  },
-
-  /** تبديل سريع بين حسابات العرض (للاختبار) */
-  loginDemoRole: async (role: UserRole, password: string = DEMO_PASSWORD) => {
-    const acc = DEMO_ACCOUNTS.find((a) => a.role === role);
-    if (!acc) throw new Error('لا يوجد حساب تجريبي لهذه الصلاحية');
-    await signOut(auth).catch(() => undefined);
-    return api.login(acc.email, password);
+    return { success: true, message: 'تم حذف ملف المستخدم من قاعدة البيانات' };
   },
 
   // ------------------------------------------------------------- REPORTS

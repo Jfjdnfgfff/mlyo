@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Calendar, Shield, UserCheck, RefreshCw, LogOut, Radio } from 'lucide-react';
+import { Menu, Calendar, Shield, RefreshCw, Radio } from 'lucide-react';
 import { UserRole, User } from '../types';
 
 interface HeaderProps {
@@ -8,7 +8,6 @@ interface HeaderProps {
   onSwitchUser: (role: UserRole) => void;
   onToggleMobileMenu: () => void;
   onRefreshData?: () => void;
-  onSignOut?: () => void;
   isLive?: boolean;
 }
 
@@ -18,7 +17,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSwitchUser,
   onToggleMobileMenu,
   onRefreshData,
-  onSignOut,
   isLive
 }) => {
   const todayFormatted = new Date().toLocaleDateString('ar-DZ', {
@@ -79,18 +77,29 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="font-semibold text-slate-700">{currentUser.name}</span>
         </div>
 
-        {/* Sign out */}
-        {onSignOut && (
-          <button
-            onClick={onSignOut}
-            className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
-            title="تسجيل الخروج"
-            aria-label="تسجيل الخروج"
-          >
-            <LogOut className="w-4.5 h-4.5" />
-            <span className="hidden lg:inline text-xs font-bold">خروج</span>
-          </button>
-        )}
+        {/* تبديل الدور محلياً (بدون كلمة مرور) — لاختبار صلاحيات الواجهة */}
+        <div
+          className="flex items-center gap-1 bg-slate-100 rounded-xl border border-slate-200/80 p-1"
+          title="تبديل الصلاحية محلياً"
+        >
+          {([
+            { role: 'ADMIN' as UserRole, label: 'مدير' },
+            { role: 'EDUCATOR' as UserRole, label: 'مربية' },
+            { role: 'ACCOUNTANT' as UserRole, label: 'محاسب' }
+          ]).map(({ role, label }) => (
+            <button
+              key={role}
+              onClick={() => onSwitchUser(role)}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                currentUser.role === role
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
     </header>
   );
